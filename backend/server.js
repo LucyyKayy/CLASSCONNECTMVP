@@ -16,8 +16,13 @@ import AssignmentRoutes from "./routes/AssignmentRoutes.js";
 dotenv.config();
 const app = express();
 
-// Middleware
-app.use(cors());
+// === 🌐 CORS Setup for Netlify Frontend ===
+app.use(cors({
+  origin: "https://classconnectprojectt.netlify.app", // Netlify frontend
+  methods: ["GET","POST","PUT","DELETE"],
+  credentials: true
+}));
+
 app.use(express.json());
 
 // File path setup for ES Modules
@@ -56,11 +61,9 @@ app.use("/api/classes", classRoutes);
 app.use("/api/assignments", AssignmentRoutes);
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-
 // ===========================================
 // ⭐ LibreTranslate (with auto fallback)
 // ===========================================
-
 const TRANSLATE_URLS = [
   "https://translate.argosopentech.com/translate",
   "https://libretranslate.com/translate"
@@ -69,42 +72,26 @@ const TRANSLATE_URLS = [
 // 1️⃣ TEXT → TEXT
 app.post("/api/translate-text", async (req, res) => {
   const { text, targetLang } = req.body;
-
   for (const url of TRANSLATE_URLS) {
     try {
       const response = await axios.post(
         url,
-        {
-          q: text,
-          source: "auto",
-          target: targetLang,
-          format: "text",
-        },
-        {
-          headers: {
-            "Content-Type": "application/json",
-            "accept": "application/json",
-          },
-        }
+        { q: text, source: "auto", target: targetLang, format: "text" },
+        { headers: { "Content-Type": "application/json", "accept": "application/json" } }
       );
-
       return res.json({ translated: response.data.translatedText });
     } catch (err) {
       console.log(`⚠️ LibreTranslate failed at ${url}, trying next...`);
     }
   }
-
   res.status(500).json({ error: "Translation failed (all services unavailable)." });
 });
 
-
-// 2️⃣ SPEECH → TEXT (placeholder transcription)
+// 2️⃣ SPEECH → TEXT (placeholder)
 app.post("/api/stt", upload.single("audio"), async (req, res) => {
   try {
     const audioPath = req.file.path;
-
     const dummyText = "This is a placeholder transcription.";
-
     fs.unlinkSync(audioPath);
     res.json({ text: dummyText });
   } catch (err) {
@@ -113,11 +100,9 @@ app.post("/api/stt", upload.single("audio"), async (req, res) => {
   }
 });
 
-
-// 3️⃣ TEXT → SPEECH (placeholder audio)
+// 3️⃣ TEXT → SPEECH (placeholder)
 app.post("/api/tts", async (req, res) => {
   const { text, lang = "en" } = req.body;
-
   try {
     const dummyAudio = fs.readFileSync(path.join(__dirname, "uploads/dummy.wav"));
     res.set({ "Content-Type": "audio/wav" });
@@ -128,17 +113,12 @@ app.post("/api/tts", async (req, res) => {
   }
 });
 
-
 // 4️⃣ FULL VOICE → VOICE
 app.post("/api/translate-voice", upload.single("audio"), async (req, res) => {
   try {
     const { targetLang } = req.body;
     const audioPath = req.file.path;
-
-    // Step 1 — placeholder STT
     const text = "This is a placeholder transcription.";
-
-    // Step 2 — translate text
     let translatedText = "Translation not available";
 
     for (const url of TRANSLATE_URLS) {
@@ -146,23 +126,15 @@ app.post("/api/translate-voice", upload.single("audio"), async (req, res) => {
         const response = await axios.post(
           url,
           { q: text, source: "auto", target: targetLang, format: "text" },
-          {
-            headers: {
-              "Content-Type": "application/json",
-              "accept": "application/json",
-            },
-          }
+          { headers: { "Content-Type": "application/json", "accept": "application/json" } }
         );
-
         translatedText = response.data.translatedText;
         break;
       } catch {}
     }
 
-    // Step 3 — placeholder TTS
     const dummyAudio = fs.readFileSync(path.join(__dirname, "uploads/dummy.wav"));
     fs.unlinkSync(audioPath);
-
     res.set({ "Content-Type": "audio/wav" });
     res.send(dummyAudio);
   } catch (err) {
@@ -171,15 +143,12 @@ app.post("/api/translate-voice", upload.single("audio"), async (req, res) => {
   }
 });
 
-
 // =========================================
-// 📥 DOWNLOAD EXERCISES — NEW ENDPOINT
+// 📥 DOWNLOAD EXERCISES
 // =========================================
-
 app.post("/api/download-exercise", async (req, res) => {
   try {
     const { content } = req.body;
-
     if (!content) return res.status(400).json({ error: "No content provided." });
 
     const fileName = `exercise-${Date.now()}.txt`;
@@ -191,24 +160,23 @@ app.post("/api/download-exercise", async (req, res) => {
       if (err) console.error("Download error:", err);
       setTimeout(() => fs.unlinkSync(filePath), 3000); // delete after sending
     });
-
   } catch (err) {
     console.error("Download exercise error:", err.message);
     res.status(500).json({ error: "Failed to generate exercise file." });
   }
 });
 
+// =========================================
+// ✅ Health Check (for Render deployment)
+app.get("/api/health", (req, res) => {
+  res.json({ status: "OK" });
+});
 
-// =========================================
 // 💾 Connect DB and Start Server
-// =========================================
 const PORT = process.env.PORT || 5000;
 
 mongoose
-  .connect(process.env.MONGO_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-  })
+  .connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => {
     console.log("✅ MongoDB connected");
     app.listen(PORT, () => console.log(`🚀 API running on port ${PORT}`));
